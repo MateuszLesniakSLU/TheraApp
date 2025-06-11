@@ -1,110 +1,139 @@
 import { defineStore } from 'pinia';
 import router from '../router';
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export const useAuthStore = defineStore('auth', {
     state: () => ({
         user: JSON.parse(localStorage.getItem('user') || 'null'),
-        token: localStorage.getItem('token') || null,
+        accessToken: localStorage.getItem('access_token') || null,
     }),
 
     getters: {
-        isAuthenticated: state => !!state.token,
+        isAuthenticated: state => !!state.accessToken,
+        userRole: state => state.user?.role || null,
     },
+
     actions: {
         setToken(token: string) {
-            this.token = token;
-            localStorage.setItem('token', token);
+            this.accessToken = token;
+            localStorage.setItem('access_token', token);
+        },
+        clearAuth() {
+            this.accessToken = null;
+            this.user = null;
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('user');
         },
 
-        /**
-         * rejestruje użytkownika do bazy danych
-         * @param email - mail użytkownika podczas rejestracji
-         * @param password - hasło użytkownika podczas rejestracji
-         */
-        async register(email: string, password: string) {
-            const res = await fetch(`${API_URL}/auth/register`, {
+        async register(email: string, password: string, firstName = '', lastName = '') {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/auth/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ email, password, firstName, lastName }),
+                credentials: 'include',
             });
-
             if (!res.ok) throw new Error(await res.text());
-
             const data = await res.json();
             this.setToken(data.access_token);
             await this.fetchProfile();
             router.push('/profile');
         },
 
-        /**
-         * logowanie użytkowników, sprawdza bazę, jeżeli istnieje wysyła do /profile
-         * @param email - sprawdza zgodność maila z danymi z bazy
-         * @param password - sprawdza zgodność hasła z danymi z bazy
-         */
         async login(email: string, password: string) {
             const res = await fetch(`${API_URL}/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ email, password }),
             });
-
             if (!res.ok) throw new Error(await res.text());
-
             const data = await res.json();
             this.setToken(data.access_token);
             await this.fetchProfile();
-            router.push('/profile');
         },
 
-        /**
-         * wylogowywuje użytkownika z konta, wypycha natychmiastowo konto do /login i czyści token sesji w localStorage
-         */
-        logout() {
-            this.token = '';
-            this.user = null;
-            localStorage.removeItem('token');
+        async logout() {
+            await fetch(`${API_URL}/auth/logout`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+            this.clearAuth();
             router.push('/login');
         },
 
-        /**
-         *  pobiera dane nt. zalogowanego profilu i tokena, obsługuje błąd w razie niezgodności
-         */
-        async fetchProfile() {
-            const res = await fetch(`${API_URL}/api/auth/profile`, {
-                headers: { Authorization: `Bearer ${this.token}` },
+        async refreshToken() {
+            const res = await fetch(`${API_URL}/auth/refresh`, {
+                method: 'POST',
+                credentials: 'include'
             });
+            if (!res.ok) throw new Error('Token jest nieważny.');
+            const data = await res.json();
+            this.setToken(data.access_token);
+            return data.access_token;
+        },
+
+        async fetchProfile() {
+            let res = await fetch(`${API_URL}/users/me`, {
+                headers: { Authorization: `Bearer ${this.accessToken}` },
+                credentials: 'include'
+            });
+            if (res.status === 401) {
+                try {
+                    await this.refreshToken();
+                    res = await fetch(`${API_URL}/users/me`, {
+                        headers: { Authorization: `Bearer ${this.accessToken}` },
+                        credentials: 'include'
+                    });
+                } catch (e) {
+                    this.clearAuth();
+                    router.push('/login');
+                    throw new Error('Sesja wygasła, zaloguj się ponownie.');
+                }
+            }
             if (!res.ok) throw new Error(await res.text());
             this.user = await res.json();
             localStorage.setItem('user', JSON.stringify(this.user));
         },
 
-        /**
-         * wprowadza zmiany w profilu do bazy danych
-         * @param dto
-         */
         async updateProfile(dto: { email?: string; password?: string; firstName?: string; lastName?: string }) {
-            const res = await fetch(`${API_URL}/auth/profile`, {
+            let res = await fetch(`${API_URL}/users/${this.user.id}`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${this.token}`,
+                    Authorization: `Bearer ${this.accessToken}`,
                 },
+                credentials: 'include',
                 body: JSON.stringify(dto),
             });
+
+            if (res.status === 401) {
+                try {
+                    await this.refreshToken();
+                    res = await fetch(`${API_URL}/users/${this.user.id}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${this.accessToken}`,
+                        },
+                        credentials: 'include',
+                        body: JSON.stringify(dto),
+                    });
+                } catch (e) {
+                    this.clearAuth();
+                    router.push('/login');
+                    throw new Error('Sesja wygasła, zaloguj się ponownie.');
+                }
+            }
+
             if (!res.ok) throw new Error(await res.text());
             this.user = await res.json();
             localStorage.setItem('user', JSON.stringify(this.user));
         },
 
-        /**
-         * pobiera dane użytkownika z localStorage, jeżeli nie istnieje zwraca null
-         */
         initFromStorage() {
             this.user = JSON.parse(localStorage.getItem('user') || 'null');
-            this.token = localStorage.getItem('token') || null;
+            this.accessToken = localStorage.getItem('access_token') || null;
         },
-
     },
 });

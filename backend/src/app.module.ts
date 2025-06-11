@@ -1,11 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
-import { PatientsModule } from './patients/patients.module';
-import { TherapistsModule } from './therapists/therapists.module';
-import { AdminsModule } from './admins/admins.module';
-import { SurveyItemsModule } from './survey-items/survey-items.module';
-import { SurveyResponsesModule } from './survey-responses/survey-responses.module';
 import { UsersModule } from './users/users.module';
 import { LoggerModule } from 'nestjs-pino';
 
@@ -28,11 +23,6 @@ import { LoggerModule } from 'nestjs-pino';
       },
     }),
     PrismaModule,
-    PatientsModule,
-    AdminsModule,
-    TherapistsModule,
-    SurveyItemsModule,
-    SurveyResponsesModule,
     AuthModule,
     UsersModule,
   ],

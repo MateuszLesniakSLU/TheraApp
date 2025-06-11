@@ -1,33 +1,25 @@
-/**
-* Komponent Navbar - prosty pasek nawigacyjny z dopasowaniem w zależności od roli, np. Panel Admina jeżeli auth.user?.role === 'admin'
-*/
+<script setup lang="ts">
+import { useAuthStore } from '../store/auth'
+import { computed } from 'vue'
+
+const auth = useAuthStore()
+const isAuthenticated = computed(() => auth.isAuthenticated)
+const userRole = computed(() => auth.userRole)
+const logout = () => auth.logout()
+</script>
+
 <template>
-  <v-app-bar app>
-    <v-toolbar-title>Therapy App</v-toolbar-title>
-    <v-spacer />
-
-    <div v-if="!auth.isAuthenticated">
-      <router-link to="/login">
-        <v-btn text>Login</v-btn>
-      </router-link>
-      <router-link to="/register">
-        <v-btn text>Register</v-btn>
-      </router-link>
-    </div>
-
-    <div v-else>
-      <router-link v-if="auth.user?.role === 'admin'" to="/admin">
-        <v-btn text color="primary">Panel Admina</v-btn>
-      </router-link>
-      <router-link to="/profile">
-        <v-btn text>Profile</v-btn>
-      </router-link>
-      <v-btn text @click="auth.logout">Logout</v-btn>
-    </div>
+  <v-app-bar color="primary" dark>
+    <v-toolbar-title>TheraApp</v-toolbar-title>
+    <v-spacer></v-spacer>
+    <template v-if="isAuthenticated">
+      <v-btn text to="/profile">Profil</v-btn>
+      <v-btn text to="/admin" v-if="userRole === 'ADMIN'">Panel Administratora</v-btn>
+      <v-btn text @click="logout">Wyloguj</v-btn>
+    </template>
+    <template v-else>
+      <v-btn text to="/login">Logowanie</v-btn>
+      <v-btn text to="/register">Rejestracja</v-btn>
+    </template>
   </v-app-bar>
 </template>
-
-<script setup>
-import { useAuthStore } from '../store/auth';
-const auth = useAuthStore();
-</script>

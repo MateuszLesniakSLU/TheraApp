@@ -2,73 +2,73 @@ import {
   Controller,
   Post,
   Body,
-  HttpCode,
-  HttpStatus,
-  UseGuards,
+  UnauthorizedException,
+  Res,
   Req,
-  Get,
-  Patch,
 } from '@nestjs/common';
-import { JwtAuthGuard } from './jwt-auth.guard';
-import { RegisterDto } from './dto/register.dto';
+import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { AuthService } from './auth.service';
+import { Request, Response } from 'express';
+import {RegisterDto} from "./dto/register.dto";
 
-/**
- * Kontroler odpowiedzialny za autentykacje użytkowników
- */
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly usersService: UsersService,
+  ) {}
 
   /**
-   * Rejestracja użytkowników
-   * @param dto - dane rejestracyjne konta: email, hasło
+   *
+   * @param loginDto
+   * @param res
    */
+  @Post('login')
+  async login(@Body() loginDto: LoginDto, @Res() res: Response) {
+    const user = await this.authService.validateUser(
+      loginDto.email,
+      loginDto.password,
+    );
+    if (!user) throw new UnauthorizedException('Nieprawidłowe dane');
+    const { access_token, refresh_token } = await this.authService.login(user);
+    res.cookie('refresh_token', refresh_token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    if (!user.isActive) throw new UnauthorizedException('To konto nie istnieje lub jest nieaktywne.');
+    res.json({ access_token });
+  }
+
   @Post('register')
-  register(@Body() dto: RegisterDto) {
+  async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
-  /**
-   * logowanie użytkownika do systemu
-   * @param dto - dane pobierane podczas logowania do aplikacji
-   * @param req - żądanie logowania
-   */
-  @Post('login')
-  @HttpCode(HttpStatus.OK)
-  login(@Body() dto: LoginDto, @Req() req) {
-    return this.authService.login(dto, req);
-  }
+  @Post('refresh')
+  async refresh(@Req() req: Request, @Res() res: Response) {
+    const refreshToken = req.cookies['refresh_token'];
+    if (!refreshToken) throw new UnauthorizedException('No refresh token');
+    const user = await this.authService.verifyRefreshToken(refreshToken);
 
-  /**
-   * Pobieranie profilu po zalogowaniu
-   * @param req - żądanie do pobrania profilu
-   */
-  @Get('profile')
-  @UseGuards(JwtAuthGuard)
-  async getProfile(@Req() req) {
-    return this.authService.getProfile(Number(req.user.id));
-  }
+    const dbUser = await this.usersService.getUserIfRefreshTokenMatches(
+      user.id,
+      refreshToken,
+    );
+    if (!dbUser) throw new UnauthorizedException('Refresh token mismatch');
 
-  /**
-   * Aktualizowanie danych profilu
-   * @param req - żądanie wysyłane po zaktualizowaniu profilu
-   * @param dto - dane przekazywane podczas aktualizacji profilu
-   */
-  @Patch('profile')
-  @UseGuards(JwtAuthGuard)
-  updateProfile(
-    @Req() req,
-    @Body()
-    dto: {
-      email?: string;
-      password?: string;
-      firstName?: string;
-      lastName?: string;
-      displayName?: string;
-    },
-  ) {
-    return this.authService.updateProfile(Number(req.user.id), dto);
+    const accessToken = this.authService.generateAccessToken(user);
+    const newRefreshToken = this.authService.generateRefreshToken(user);
+    await this.usersService.setCurrentRefreshToken(user.id, newRefreshToken);
+
+    res.cookie('refresh_token', newRefreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    res.json({ access_token: accessToken });
   }
 }

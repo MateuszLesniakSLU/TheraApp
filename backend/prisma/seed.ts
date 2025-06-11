@@ -1,76 +1,58 @@
-import { PrismaClient } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import { PrismaClient, Role } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const adminEmail = 'admin@therapy.app';
-  const adminExists = await prisma.user.findUnique({
-    where: { email: adminEmail },
+  const adminPassword = await bcrypt.hash('admin123', 10);
+  const therapistPassword = await bcrypt.hash('therapist123', 10);
+  const patientPassword = await bcrypt.hash('patient123', 10);
+
+  await prisma.user.upsert({
+    where: { email: 'admin@example.com' },
+    update: {},
+    create: {
+      email: 'admin@example.com',
+      password: adminPassword,
+      role: Role.ADMIN,
+      firstName: 'Anna',
+      lastName: 'Kowalska',
+      isActive: true,
+    },
   });
 
-  if (!adminExists) {
-    const hash = await bcrypt.hash('admin123', 10);
-    const adminUser = await prisma.user.create({
-      data: {
-        email: adminEmail,
-        password: hash,
-        role: 'admin',
-        admin: { create: {} }, // profil admina
-      },
-    });
-    console.log('✅ Admin utworzony.', adminUser.email);
-  } else {
-    console.log('Admin już istnieje.');
-  }
-
-  const therapistEmail = 'therapist1@therapy.app';
-  const therapistExists = await prisma.user.findUnique({
-    where: { email: therapistEmail },
+  await prisma.user.upsert({
+    where: { email: 'therapist@example.com' },
+    update: {},
+    create: {
+      email: 'therapist@example.com',
+      password: therapistPassword,
+      role: Role.THERAPIST,
+      firstName: 'Tomasz',
+      lastName: 'Terapeuta',
+      isActive: true,
+    },
   });
 
-  if (!therapistExists) {
-    const hash = await bcrypt.hash('therapist123', 10);
-    const therapistUser = await prisma.user.create({
-      data: {
-        email: therapistEmail,
-        password: hash,
-        role: 'therapist',
-        therapist: { create: {} }, // profil terapeuty
-      },
-    });
-    console.log('✅ Terapeuta utworzony.', therapistUser.email);
-  } else {
-    console.log('Terapeuta już istnieje.');
-  }
-
-  const patientEmail = 'patient1@therapy.app';
-  const patientExists = await prisma.user.findUnique({
-    where: { email: patientEmail },
+  const therapist = await prisma.user.findUnique({
+    where: { email: 'therapist@example.com' },
   });
 
-  if (!patientExists) {
-    const hash = await bcrypt.hash('patient123', 10);
-    const firstTherapist = await prisma.therapist.findFirst();
-    const patientUser = await prisma.user.create({
-      data: {
-        email: patientEmail,
-        password: hash,
-        role: 'patient',
-        patient: {
-          create: {
-            displayName: 'Pacjent Pierwszy',
-            therapist: firstTherapist
-              ? { connect: { id: firstTherapist.id } }
-              : undefined,
-          },
-        },
-      },
-    });
-    console.log('✅ Pacjent utworzony.', patientUser.email);
-  } else {
-    console.log('Pacjent już istnieje.');
-  }
+  await prisma.user.upsert({
+    where: { email: 'patient@example.com' },
+    update: {},
+    create: {
+      email: 'patient@example.com',
+      password: patientPassword,
+      role: Role.PATIENT,
+      firstName: 'Piotr',
+      lastName: 'Pacjent',
+      isActive: true,
+      therapistId: therapist?.id,
+    },
+  });
+
+  console.log('Seed finished!');
 }
 
 main()
